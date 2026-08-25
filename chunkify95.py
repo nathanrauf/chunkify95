@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """Recreates a modern app icon in a rough Windows-98-era style: a chunky
-low-color pixelation pass, then a hand-rolled 3D bevel and drop shadow layered
-on top (the parts a pure pixelation pass can't give you, since real Win9x
-icons weren't just "modern icon but blockier" -- they were beveled, high-
-contrast, and usually had a hard drop shadow).
+low-color pixelation pass with ordered dithering, a black outline traced
+around the outer silhouette, then a hand-rolled 3D bevel and drop shadow
+layered on top (the parts a pure pixelation pass can't give you -- real
+Win9x icons are flat-shaded and cel-outlined, closer to comic inking than a
+pixelated photo filter, high-contrast, and usually have a hard drop
+shadow).
 
 This is a heuristic re-stylization, not true style transfer -- it works
 reasonably well on simple, high-contrast, single-subject icons (the common
 case for app icons) and will look mediocre on busy/photographic ones. See
-README.md for what it's actually good and bad at.
+README.md for what it's actually good and bad at, and for why dithering is
+ordered (Bayer) rather than the more obvious Floyd-Steinberg choice.
 
 Usage:
   python3 chunkify95.py --input icon.png --output-dir out/
-  python3 chunkify95.py --input icon.png --output-dir out/ --pixel-grid 20 --colors 12 --no-bevel
+  python3 chunkify95.py --input icon.png --output-dir out/ --palette win95 --pixel-grid 32
 """
 import argparse
 import os
@@ -21,12 +24,83 @@ from PIL import Image, ImageDraw, ImageFilter
 
 SIZES = [16, 22, 24, 32, 48, 256]
 
+# The real Windows/VGA 16-color palette Win95/98 used for standard desktop
+# icons (out of the 256 colors the OS technically supported). Available via
+# --palette win95 for a stricter period-accurate look; costs real color
+# richness on icons whose hues aren't close to any of these 16 (see
+# README's "Dithering, and why it's ordered not Floyd-Steinberg").
+WIN95_PALETTE = [
+    (0, 0, 0), (128, 0, 0), (0, 128, 0), (128, 128, 0),
+    (0, 0, 128), (128, 0, 128), (0, 128, 128), (192, 192, 192),
+    (128, 128, 128), (255, 0, 0), (0, 255, 0), (255, 255, 0),
+    (0, 0, 255), (255, 0, 255), (0, 255, 255), (255, 255, 255),
+]
 
-def pixelate_and_quantize(img, grid, colors):
+# 4x4 Bayer ordered-dither threshold matrix.
+BAYER_4X4 = [
+    [0, 8, 2, 10],
+    [12, 4, 14, 6],
+    [3, 11, 1, 9],
+    [15, 7, 13, 5],
+]
+
+
+def build_adaptive_palette(img_rgb, colors):
+    pal_img = img_rgb.quantize(colors=colors, method=Image.MEDIANCUT, dither=Image.NONE)
+    flat = pal_img.getpalette()[:colors * 3]
+    return [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]
+
+
+def ordered_dither(img_rgb, palette_colors, spread=40):
+    """Ordered (Bayer 4x4) dithering: perturbs each pixel by a fixed,
+    position-based threshold before nearest-palette-color lookup. Unlike
+    error-diffusion dithering (Floyd-Steinberg), each pixel's decision is
+    independent of its neighbors' error, so it produces a regular,
+    deliberate-looking checkerboard exactly at color-transition zones
+    instead of scattered noise across the whole image -- much closer to how
+    real Win9x icon art dithers shading by hand. spread=0 disables the
+    perturbation entirely (plain nearest-color, no dither).
+
+    PIL quirk found along the way: passing dither= directly to
+    quantize(method=MEDIANCUT, ...) is silently ignored -- verified by
+    diffing output with dither=NONE vs. dither=FLOYDSTEINBERG on the same
+    call, byte-identical. Even worked around (dither only takes effect
+    remapping onto an *already-built* palette), Floyd-Steinberg's cascading
+    error was tried and rejected: on a fixed small palette it produces
+    chaotic per-pixel noise rather than the sparse, deliberate dithering
+    real icons have. This hand-rolled ordered dither replaced it entirely.
+    """
+    w, h = img_rgb.size
+    px = img_rgb.load()
+    out = Image.new("RGB", (w, h))
+    out_px = out.load()
+    n = len(BAYER_4X4)
+    for y in range(h):
+        for x in range(w):
+            r, g, b = px[x, y]
+            t = (BAYER_4X4[y % n][x % n] / (n * n) - 0.5) * spread
+            r2 = max(0, min(255, r + t))
+            g2 = max(0, min(255, g + t))
+            b2 = max(0, min(255, b + t))
+            out_px[x, y] = min(palette_colors, key=lambda c: (c[0] - r2) ** 2 + (c[1] - g2) ** 2 + (c[2] - b2) ** 2)
+    return out
+
+
+def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=40):
     """The "pixel analyze" pass: downsample to a small grid (area-averaging,
     so each output pixel is the dominant color of its source block, not just
-    a sample), then quantize to a limited palette, then scale back up with
+    a sample), then quantize with ordered dithering (see ordered_dither) at
+    this low grid resolution -- before the nearest-neighbor upscale, so the
+    dither pattern itself comes out as chunky, clearly visible pixel
+    squares instead of a fine-grained texture -- then scale back up with
     nearest-neighbor to keep hard pixel edges instead of blur.
+
+    palette="adaptive" (default) builds a best-fit palette of `colors`
+    colors for this specific image -- keeps the source's actual hues
+    recognizable. palette="win95" instead remaps onto the real fixed
+    16-color Windows palette (WIN95_PALETTE); more period-accurate, but
+    loses real color fidelity on hues that aren't close to any of the 16
+    (an icon's purple, for instance, has no close match and ends up gray).
     """
     w, h = img.size
     size = max(w, h)
@@ -38,8 +112,8 @@ def pixelate_and_quantize(img, grid, colors):
     alpha = square.split()[-1]
 
     small = square.convert("RGB").resize((grid, grid), Image.BOX)
-    quantized = small.quantize(colors=colors, method=Image.MEDIANCUT, dither=Image.NONE)
-    quantized_rgb = quantized.convert("RGB")
+    palette_colors = WIN95_PALETTE if palette == "win95" else build_adaptive_palette(small, colors)
+    quantized_rgb = ordered_dither(small, palette_colors, spread=dither_spread)
 
     small_alpha = alpha.resize((grid, grid), Image.BOX).point(lambda p: 255 if p > 96 else 0)
 
@@ -48,6 +122,46 @@ def pixelate_and_quantize(img, grid, colors):
     pixel_img.putalpha(small_alpha)
 
     return pixel_img.resize((size, size), Image.NEAREST)
+
+
+def add_pixel_outline(img, grid, thickness=None, color=(20, 20, 20, 255)):
+    """Traces a black outline around the outer silhouette only (the
+    transparent-to-opaque boundary) -- not between every internal color
+    cell. An early version of this outlined every color boundary, which
+    over-inks flat-shaded regions into a stained-glass look real icons don't
+    have. Reference icons only hard-outline the overall shape; internal
+    color transitions are handled by dithering (see pixelate_and_quantize),
+    not by lines.
+    """
+    size = img.size[0]
+    block = size / grid
+    thickness = thickness or max(1, round(size / 340))
+    px = img.load()
+
+    def cell_opaque(cx, cy):
+        if cx < 0 or cy < 0 or cx >= grid or cy >= grid:
+            return False
+        sx = min(int((cx + 0.5) * block), size - 1)
+        sy = min(int((cy + 0.5) * block), size - 1)
+        return px[sx, sy][3] >= 10
+
+    out = img.copy()
+    draw = ImageDraw.Draw(out)
+    for cy in range(grid):
+        for cx in range(grid):
+            if not cell_opaque(cx, cy):
+                continue
+            x0, y0 = cx * block, cy * block
+            x1, y1 = (cx + 1) * block, (cy + 1) * block
+            if not cell_opaque(cx + 1, cy):
+                draw.line([(x1, y0), (x1, y1 + thickness)], fill=color, width=thickness)
+            if not cell_opaque(cx, cy + 1):
+                draw.line([(x0, y1), (x1 + thickness, y1)], fill=color, width=thickness)
+            if not cell_opaque(cx - 1, cy):
+                draw.line([(x0, y0), (x0, y1 + thickness)], fill=color, width=thickness)
+            if not cell_opaque(cx, cy - 1):
+                draw.line([(x0, y0), (x1 + thickness, y0)], fill=color, width=thickness)
+    return out
 
 
 def add_bevel(img, thickness=None):
@@ -92,9 +206,11 @@ def add_drop_shadow(img, offset=None, blur=None, opacity=140):
     return canvas
 
 
-def chunkify95(img, pixel_grid=24, colors=16, bevel=True, shadow=True):
+def chunkify95(img, pixel_grid=24, colors=12, bevel=True, shadow=True, outline=True, palette="adaptive", dither_spread=40):
     img = img.convert("RGBA")
-    out = pixelate_and_quantize(img, pixel_grid, colors)
+    out = pixelate_and_quantize(img, pixel_grid, colors, palette, dither_spread)
+    if outline:
+        out = add_pixel_outline(out, pixel_grid)
     if bevel:
         out = add_bevel(out)
     if shadow:
@@ -106,19 +222,25 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--input", required=True)
     p.add_argument("--output-dir", required=True)
-    p.add_argument("--pixel-grid", type=int, default=24, help="downsample grid size before upscaling (default: 24)")
-    p.add_argument("--colors", type=int, default=16, help="palette size (default: 16)")
+    p.add_argument("--pixel-grid", type=int, default=24,
+                    help="downsample grid size before upscaling (default: 24). win95 palette benefits from a higher grid (try 32) to compensate for having only 16 colors")
+    p.add_argument("--colors", type=int, default=12, help="adaptive palette size, ignored unless --palette adaptive (default: 12)")
+    p.add_argument("--palette", choices=["adaptive", "win95"], default="adaptive",
+                    help="adaptive (default): best-fit palette per image, keeps real color fidelity. win95: real fixed 16-color VGA palette, more period-accurate but loses hues with no close match.")
+    p.add_argument("--dither-spread", type=int, default=40, help="ordered-dither strength, 0 disables (default: 40)")
     p.add_argument("--bevel", dest="bevel", action="store_true", default=True)
     p.add_argument("--no-bevel", dest="bevel", action="store_false")
     p.add_argument("--shadow", dest="shadow", action="store_true", default=True)
     p.add_argument("--no-shadow", dest="shadow", action="store_false")
+    p.add_argument("--outline", dest="outline", action="store_true", default=True)
+    p.add_argument("--no-outline", dest="outline", action="store_false")
     p.add_argument("--sizes", default=",".join(str(s) for s in SIZES))
     args = p.parse_args()
 
     os.makedirs(args.output_dir, exist_ok=True)
     src = Image.open(args.input)
 
-    master = chunkify95(src, args.pixel_grid, args.colors, args.bevel, args.shadow)
+    master = chunkify95(src, args.pixel_grid, args.colors, args.bevel, args.shadow, args.outline, args.palette, args.dither_spread)
     master_size = 512
     master_out = master.resize((master_size, master_size), Image.LANCZOS) if master.size[0] != master_size else master
     master_out.save(os.path.join(args.output_dir, "icon-master.png"))

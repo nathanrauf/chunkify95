@@ -1,9 +1,11 @@
 # chunkify95
 
 Recreates a modern app icon in a rough Windows-98-era style: pixel-analyze
-the source down to a chunky low-color grid, then layer on a hand-rolled 3D
-bevel and hard drop shadow, the two things that actually make an icon read
-as "Win98" and that a pixelation pass alone won't give you.
+the source down to a chunky low-color grid with dithering, trace a black
+outline around the silhouette, then layer on a hand-rolled 3D bevel and
+hard drop shadow. Those last three things, not just the pixelation, are
+what actually make an icon read as "Win98" instead of "photo with a
+pixelate filter applied."
 
 | Source | Result | Source | Result |
 |---|---|---|---|
@@ -35,11 +37,19 @@ Produces `icon-master.png` (512×512) plus `icon-16.png` .. `icon-256.png`
 Options:
 
 ```
---pixel-grid N   downsample grid before upscaling back up (default: 24)
---colors N       palette size (default: 16)
---no-bevel       skip the 3D bevel pass
---no-shadow      skip the drop shadow
---sizes 16,32,48 comma-separated output sizes
+--pixel-grid N     downsample grid size before upscaling (default: 24).
+                    win95 palette benefits from a higher grid (try 32) to
+                    compensate for having only 16 colors to work with.
+--colors N         adaptive palette size, ignored unless --palette adaptive (default: 12)
+--palette MODE     adaptive (default): best-fit palette per image, keeps
+                    real color fidelity. win95: the real fixed 16-color
+                    VGA palette, more period-accurate but loses hues with
+                    no close match (see below).
+--dither-spread N  ordered-dither strength, 0 disables (default: 40)
+--no-bevel         skip the 3D bevel pass
+--no-shadow        skip the drop shadow
+--no-outline       skip the black silhouette outline
+--sizes 16,32,48   comma-separated output sizes
 ```
 
 ## How it works
@@ -47,17 +57,75 @@ Options:
 1. **Pixel-analyze**: the source is pasted onto a square canvas, downsampled
    to an `N×N` grid with box (area-average) filtering, so each output cell
    is the *dominant* color of its source region rather than a single sampled
-   pixel, then quantized to a limited palette (`Image.quantize`, median-cut).
-   The alpha channel is thresholded separately so transparency stays crisp
-   instead of picking up quantization noise.
-2. **Upscale with nearest-neighbor** back to full size, keeping hard pixel
+   pixel.
+2. **Quantize with ordered dithering**: each cell is mapped to the nearest
+   color in the palette (adaptive or win95, see `--palette`), after
+   perturbing it by a small, position-based threshold (a 4×4 Bayer matrix).
+   This produces a deliberate, regular checkerboard exactly at color-
+   transition zones instead of either a flat block or scattered noise. See
+   "Dithering, and why it's ordered, not Floyd-Steinberg" below.
+3. **Upscale with nearest-neighbor** back to full size, keeping hard pixel
    edges instead of blur.
-3. **Bevel**: a lighter copy of the icon's silhouette is offset up-left and
-   a darker copy down-right, both composited behind the pixelated icon,
-   approximating the light-top/dark-bottom 3D edge every real Win9x icon has,
-   without actually tracing per-pixel normals.
-4. **Drop shadow**: a blurred, offset black copy of the silhouette, behind
+4. **Outline**: a black line traced around the outer silhouette only (the
+   transparent-to-opaque boundary), not between every internal color cell.
+5. **Bevel**: a lighter copy of the icon's silhouette offset up-left and a
+   darker copy offset down-right, both composited behind the icon,
+   approximating the light-top/dark-bottom 3D edge every real Win9x icon
+   has.
+6. **Drop shadow**: a blurred, offset black copy of the silhouette, behind
    everything.
+
+## Dithering, and why it's ordered, not Floyd-Steinberg
+
+The first working version of this used `PIL.Image.quantize(...,
+dither=Image.FLOYDSTEINBERG)`, and it did nothing. Diffing the output
+against `dither=Image.NONE` on the same call showed byte-identical results:
+turns out PIL silently ignores the `dither` argument when combined with
+`method=Image.MEDIANCUT`. It only takes effect when remapping onto an
+*already-built* palette, so building the palette and applying it with
+dithering has to be two separate calls.
+
+Fixed that, and Floyd-Steinberg still barely showed up, for a more
+fundamental reason: it only dithers where the palette can't represent a
+color exactly, and an *adaptive* palette is built to fit the source image,
+so there's rarely much to correct. Switching to the actual fixed win95
+16-color palette did force dithering, but error-diffusion cascading
+through 16 colors produced chaotic per-pixel noise, closer to a scrambled
+GIF than a hand-shaded icon.
+
+Ordered (Bayer 4×4) dithering fixed both problems at once. Each pixel's
+dither decision depends only on its position in a fixed repeating
+threshold pattern, not on accumulated error from previous pixels, so it
+produces a *deliberate*, regular checkerboard concentrated at actual color
+transitions, closer to how a real pixel artist would hand-place dither for
+shading, instead of scattered noise across the whole image.
+
+## Adaptive vs. win95 palette
+
+Windows 95 primarily used a 16-color palette for standard desktop icons
+(the OS technically supported up to 256). Using that literal fixed
+palette (`--palette win95`) is more historically accurate, but real icons
+were hand-drawn by artists choosing which of those colors to use per
+region, not automatically quantized against them. Run it automatically on
+a modern icon and any hue without a close match in those 16 colors just
+degrades: a source purple, with nothing near it in the palette, ends up
+flattened to gray. The default `adaptive` palette keeps a source's actual
+colors recognizable, which matters more for actually identifying the app
+than strict period accuracy does. If you do use `--palette win95`, raise
+`--pixel-grid` (32 works well). More spatial resolution gives the dither
+pattern more room to carry detail that the smaller palette can't represent
+directly.
+
+## The win95 palette, for reference
+
+Same five icons, `--palette win95 --pixel-grid 32` instead of the adaptive
+default. Compare against the table at the top: more period-accurate colors,
+noticeably less vibrant, but still legible thanks to the higher grid
+resolution.
+
+| win95 palette |
+|---|
+| ![gear win95 palette](examples/gear-win98-win95palette.png) ![Firefox win95 palette](examples/firefox-win98-win95palette.png) ![Chromium win95 palette](examples/chromium-win98-win95palette.png) ![Steam win95 palette](examples/steam-win98-win95palette.png) ![Code - OSS win95 palette](examples/code-oss-win98-win95palette.png) |
 
 ## What it's good at
 
@@ -72,9 +140,9 @@ This is a heuristic re-stylization, not true style transfer, and I'd rather
 say that up front than let you find out from a muddy result. It will
 struggle with:
 
-- **Photographic or gradient-heavy icons**: median-cut quantization on a
-  smooth gradient produces visible banding rather than a clean palette; the
-  block-averaging can also muddy fine detail into an indistinct blob.
+- **Photographic or gradient-heavy icons**: dithering helps more here than
+  flat quantization alone would, but extreme detail still won't survive
+  the downsample to a small grid.
 - **Icons that are already mostly white/near-transparent**: the alpha
   threshold in the pixelation pass can clip soft edges more aggressively
   than intended.
