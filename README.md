@@ -9,6 +9,11 @@ as "Win98" and that a pixelation pass alone won't give you.
 |---|---|
 | ![gear source](examples/gear-source.png) | ![gear win98](examples/gear-win98.png) |
 
+Built to plug the icon gap in [chicago95-plus](https://github.com/nathanrauf/chicago95-plus)
+(a Chicago95-on-Cinnamon companion pack). Chicago95's icon theme covers a
+lot, but not everything you actually have installed, and this is the tool
+for whatever's left over.
+
 ## Usage
 
 ```sh
