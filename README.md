@@ -40,8 +40,8 @@ Options:
 --colors N         adaptive palette size, ignored unless --palette adaptive (default: 12)
 --palette MODE     adaptive (default): best-fit palette per image, keeps
                     real color fidelity. win95: the real fixed 16-color
-                    VGA palette, more period-accurate but loses hues with
-                    no close match (see below).
+                    VGA palette, hue-matched (see "Palettes" below),
+                    more period-accurate but still fewer colors overall.
 --dither-spread N  ordered-dither strength, 0 disables (default: 40)
 --no-bevel         skip the 3D bevel pass
 --no-shadow        skip the drop shadow
@@ -103,22 +103,32 @@ Windows 95 primarily used a 16-color palette for standard desktop icons
 (the OS technically supported up to 256). Using that literal fixed
 palette (`--palette win95`) is more historically accurate, but real icons
 were hand-drawn by artists choosing which of those colors to use per
-region, not automatically quantized against them. Run it automatically on
-a modern icon and any hue without a close match in those 16 colors just
-degrades: a source purple, with nothing near it in the palette, ends up
-flattened to gray. The default `adaptive` palette keeps a source's actual
-colors recognizable, which matters more for actually identifying the app
-than strict period accuracy does. If you do use `--palette win95`, raise
+region, not automatically quantized against them.
+
+Matching each pixel to its nearest palette color by plain RGB distance
+mostly defeats the point: gray sits centrally in RGB space, so it reads as
+"close" to almost any medium-saturation color regardless of hue. A source
+purple with no exact match in the 16 colors would land on gray instead of
+purple, red, or blue, even though a person would never call that pixel
+gray. `nearest_win95_color` fixes this by treating hue and grayness as
+separate questions: pixels below a saturation threshold match among
+black/gray/silver/white by brightness only, everything else matches to the
+closest *hue family* first, then picks that family's dark or bright variant
+by brightness. Two decisions instead of one combined distance, and colors
+land on an actually-related hue instead of the desaturated middle color.
+
+The default `adaptive` palette doesn't need this: it's built from the
+image's own colors, so nothing in it is competing with gray for pixels that
+clearly aren't gray. If you do use `--palette win95`, also raise
 `--pixel-grid` (32 works well). More spatial resolution gives the dither
-pattern more room to carry detail that the smaller palette can't represent
+pattern more room to carry detail the smaller palette can't represent
 directly.
 
 ## Win95 sample
 
 Same five icons, `--palette win95 --pixel-grid 32` instead of the adaptive
 default. Compare against the table at the top: more period-accurate colors,
-noticeably less vibrant, but still legible thanks to the higher grid
-resolution.
+still recognizably the right hues now that matching is hue-aware.
 
 <img src="examples/gear-win98-win95palette.png" width="90"> <img src="examples/firefox-win98-win95palette.png" width="90"> <img src="examples/chromium-win98-win95palette.png" width="90"> <img src="examples/steam-win98-win95palette.png" width="90"> <img src="examples/code-oss-win98-win95palette.png" width="90">
 

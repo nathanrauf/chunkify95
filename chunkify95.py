@@ -2,12 +2,12 @@
 """Recreates a modern app icon in a rough Windows-98-era style: a chunky
 low-color pixelation pass with ordered dithering, a black outline traced
 around the outer silhouette, then a hand-rolled 3D bevel and drop shadow
-layered on top (the parts a pure pixelation pass can't give you -- real
+layered on top (the parts a pure pixelation pass can't give you: real
 Win9x icons are flat-shaded and cel-outlined, closer to comic inking than a
 pixelated photo filter, high-contrast, and usually have a hard drop
 shadow).
 
-This is a heuristic re-stylization, not true style transfer -- it works
+This is a heuristic re-stylization, not true style transfer. It works
 reasonably well on simple, high-contrast, single-subject icons (the common
 case for app icons) and will look mediocre on busy/photographic ones. See
 README.md for what it's actually good and bad at, and for why dithering is
@@ -18,6 +18,7 @@ Usage:
   python3 chunkify95.py --input icon.png --output-dir out/ --palette win95 --pixel-grid 32
 """
 import argparse
+import colorsys
 import os
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -28,13 +29,56 @@ SIZES = [16, 22, 24, 32, 48, 256]
 # icons (out of the 256 colors the OS technically supported). Available via
 # --palette win95 for a stricter period-accurate look; costs real color
 # richness on icons whose hues aren't close to any of these 16 (see
-# README's "Dithering, and why it's ordered not Floyd-Steinberg").
+# README's "Dithering").
 WIN95_PALETTE = [
     (0, 0, 0), (128, 0, 0), (0, 128, 0), (128, 128, 0),
     (0, 0, 128), (128, 0, 128), (0, 128, 128), (192, 192, 192),
     (128, 128, 128), (255, 0, 0), (0, 255, 0), (255, 255, 0),
     (0, 0, 255), (255, 0, 255), (0, 255, 255), (255, 255, 255),
 ]
+
+# The 4 achromatic win95 entries, and the other 12 grouped into dark/bright
+# pairs per hue. Used by nearest_win95_color, since plain Euclidean RGB
+# distance picks gray for most medium-saturation colors (gray sits centrally
+# in RGB space, so it reads as "close" to nearly anything, regardless of
+# hue), so matching has to treat hue and grayness as separate questions
+# instead of one combined distance. See README's "Palettes".
+WIN95_ACHROMATIC = [(0, 0, 0), (128, 128, 128), (192, 192, 192), (255, 255, 255)]
+WIN95_HUE_FAMILIES = {
+    "red": ((128, 0, 0), (255, 0, 0)),
+    "yellow": ((128, 128, 0), (255, 255, 0)),
+    "green": ((0, 128, 0), (0, 255, 0)),
+    "cyan": ((0, 128, 128), (0, 255, 255)),
+    "blue": ((0, 0, 128), (0, 0, 255)),
+    "magenta": ((128, 0, 128), (255, 0, 255)),
+}
+
+
+def nearest_win95_color(r, g, b, sat_threshold=0.15):
+    """Hue-aware nearest-color lookup for the fixed win95 palette: pixels
+    below the saturation threshold match among black/gray/silver/white by
+    brightness only; everything else matches to the closest hue family
+    first, then picks that family's dark or bright variant by whichever is
+    closer in brightness. Two separate decisions (hue, then lightness)
+    instead of one combined RGB distance, which is what lets an actually
+    purple pixel land on purple instead of gray.
+    """
+    h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    if s < sat_threshold:
+        return min(WIN95_ACHROMATIC, key=lambda c: abs(colorsys.rgb_to_hsv(*(x / 255 for x in c))[2] - v))
+
+    def hue_distance(h1, h2):
+        d = abs(h1 - h2)
+        return min(d, 1 - d)
+
+    family = min(
+        WIN95_HUE_FAMILIES.values(),
+        key=lambda pair: hue_distance(h, colorsys.rgb_to_hsv(*(x / 255 for x in pair[0]))[0]),
+    )
+    dark, bright = family
+    dark_v = colorsys.rgb_to_hsv(*(x / 255 for x in dark))[2]
+    bright_v = colorsys.rgb_to_hsv(*(x / 255 for x in bright))[2]
+    return dark if abs(v - dark_v) < abs(v - bright_v) else bright
 
 # 4x4 Bayer ordered-dither threshold matrix.
 BAYER_4X4 = [
@@ -51,18 +95,29 @@ def build_adaptive_palette(img_rgb, colors):
     return [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]
 
 
-def ordered_dither(img_rgb, palette_colors, spread=40):
+def _nearest_rgb(r, g, b, palette_colors):
+    return min(palette_colors, key=lambda c: (c[0] - r) ** 2 + (c[1] - g) ** 2 + (c[2] - b) ** 2)
+
+
+def ordered_dither(img_rgb, palette_colors, spread=40, match_fn=None):
     """Ordered (Bayer 4x4) dithering: perturbs each pixel by a fixed,
     position-based threshold before nearest-palette-color lookup. Unlike
     error-diffusion dithering (Floyd-Steinberg), each pixel's decision is
     independent of its neighbors' error, so it produces a regular,
     deliberate-looking checkerboard exactly at color-transition zones
-    instead of scattered noise across the whole image -- much closer to how
+    instead of scattered noise across the whole image, much closer to how
     real Win9x icon art dithers shading by hand. spread=0 disables the
     perturbation entirely (plain nearest-color, no dither).
 
+    match_fn(r, g, b) -> (r, g, b) overrides the default plain-Euclidean
+    nearest-color lookup; pass nearest_win95_color for palette="win95" (see
+    its docstring for why the default distance metric picks gray far too
+    often). Left as plain Euclidean for the adaptive palette, where it's
+    fine: an adaptive palette is built from the image's own colors, so nothing
+    in it competes with gray for pixels that clearly aren't gray.
+
     PIL quirk found along the way: passing dither= directly to
-    quantize(method=MEDIANCUT, ...) is silently ignored -- verified by
+    quantize(method=MEDIANCUT, ...) is silently ignored. Verified by
     diffing output with dither=NONE vs. dither=FLOYDSTEINBERG on the same
     call, byte-identical. Even worked around (dither only takes effect
     remapping onto an *already-built* palette), Floyd-Steinberg's cascading
@@ -70,6 +125,7 @@ def ordered_dither(img_rgb, palette_colors, spread=40):
     chaotic per-pixel noise rather than the sparse, deliberate dithering
     real icons have. This hand-rolled ordered dither replaced it entirely.
     """
+    match_fn = match_fn or (lambda r, g, b: _nearest_rgb(r, g, b, palette_colors))
     w, h = img_rgb.size
     px = img_rgb.load()
     out = Image.new("RGB", (w, h))
@@ -82,7 +138,7 @@ def ordered_dither(img_rgb, palette_colors, spread=40):
             r2 = max(0, min(255, r + t))
             g2 = max(0, min(255, g + t))
             b2 = max(0, min(255, b + t))
-            out_px[x, y] = min(palette_colors, key=lambda c: (c[0] - r2) ** 2 + (c[1] - g2) ** 2 + (c[2] - b2) ** 2)
+            out_px[x, y] = match_fn(r2, g2, b2)
     return out
 
 
@@ -90,17 +146,18 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=4
     """The "pixel analyze" pass: downsample to a small grid (area-averaging,
     so each output pixel is the dominant color of its source block, not just
     a sample), then quantize with ordered dithering (see ordered_dither) at
-    this low grid resolution -- before the nearest-neighbor upscale, so the
+    this low grid resolution, before the nearest-neighbor upscale, so the
     dither pattern itself comes out as chunky, clearly visible pixel
-    squares instead of a fine-grained texture -- then scale back up with
+    squares instead of a fine-grained texture. Then scale back up with
     nearest-neighbor to keep hard pixel edges instead of blur.
 
     palette="adaptive" (default) builds a best-fit palette of `colors`
-    colors for this specific image -- keeps the source's actual hues
+    colors for this specific image, keeping the source's actual hues
     recognizable. palette="win95" instead remaps onto the real fixed
-    16-color Windows palette (WIN95_PALETTE); more period-accurate, but
-    loses real color fidelity on hues that aren't close to any of the 16
-    (an icon's purple, for instance, has no close match and ends up gray).
+    16-color Windows palette (WIN95_PALETTE), matched hue-first via
+    nearest_win95_color rather than plain RGB distance (which routes most
+    medium-saturation colors to gray regardless of actual hue: see that
+    function's docstring).
     """
     w, h = img.size
     size = max(w, h)
@@ -112,8 +169,11 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=4
     alpha = square.split()[-1]
 
     small = square.convert("RGB").resize((grid, grid), Image.BOX)
-    palette_colors = WIN95_PALETTE if palette == "win95" else build_adaptive_palette(small, colors)
-    quantized_rgb = ordered_dither(small, palette_colors, spread=dither_spread)
+    if palette == "win95":
+        quantized_rgb = ordered_dither(small, WIN95_PALETTE, spread=dither_spread, match_fn=nearest_win95_color)
+    else:
+        palette_colors = build_adaptive_palette(small, colors)
+        quantized_rgb = ordered_dither(small, palette_colors, spread=dither_spread)
 
     small_alpha = alpha.resize((grid, grid), Image.BOX).point(lambda p: 255 if p > 96 else 0)
 
@@ -126,7 +186,7 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=4
 
 def add_pixel_outline(img, grid, thickness=None, color=(20, 20, 20, 255)):
     """Traces a black outline around the outer silhouette only (the
-    transparent-to-opaque boundary) -- not between every internal color
+    transparent-to-opaque boundary), not between every internal color
     cell. An early version of this outlined every color boundary, which
     over-inks flat-shaded regions into a stained-glass look real icons don't
     have. Reference icons only hard-outline the overall shape; internal
@@ -166,7 +226,7 @@ def add_pixel_outline(img, grid, thickness=None, color=(20, 20, 20, 255)):
 
 def add_bevel(img, thickness=None):
     """A hard light-top-left/dark-bottom-right bevel traced along the alpha
-    silhouette's edge -- the single most recognizable trait of Win9x icons.
+    silhouette's edge, the single most recognizable trait of Win9x icons.
     Approximated by compositing a slightly-offset lighter/darker copy of the
     silhouette behind the original, rather than true per-pixel edge tracing.
     """
