@@ -166,18 +166,15 @@ directly.
 
 ## Win95 sample
 
-Same five icons, `--palette win95 --pixel-grid 32` instead of the adaptive
-default. Compare against the table at the top: more period-accurate colors,
-still recognizably the right hues now that matching is hue-aware.
-
-<img src="examples/gear-win98-win95palette.png" width="90"> <img src="examples/firefox-win98-win95palette.png" width="90"> <img src="examples/chromium-win98-win95palette.png" width="90"> <img src="examples/steam-win98-win95palette.png" width="90"> <img src="examples/code-oss-win98-win95palette.png" width="90">
-
-Flatter, bolder-colored icons hold up even better under the fixed win95
-palette, since there's less fine color detail to lose in the first place:
+`--palette win95 --pixel-grid 32` instead of the adaptive default: the real
+fixed 16-color palette, hue-matched (see "Palettes" above), more period-
+accurate. It does best on icons that are already flat and high-contrast,
+so that's what these four are:
 
 | Source | Result | Source | Result |
 |---|---|---|---|
 | <img src="examples/spotify-source.png" width="90"> | <img src="examples/spotify-win98-win95palette.png" width="90"> | <img src="examples/discord-source.png" width="90"> | <img src="examples/discord-win98-win95palette.png" width="90"> |
+| <img src="examples/audacity-source.png" width="90"> | <img src="examples/audacity-win98-win95palette.png" width="90"> | <img src="examples/slack-source.png" width="90"> | <img src="examples/slack-win98-win95palette.png" width="90"> |
 
 ## Strengths
 
@@ -224,8 +221,8 @@ Papirus's icons are a different case: original artwork drawn by the Papirus
 project, released under their own GPL-3.0 license, and (where one exists)
 drawn for the open-source upstream project rather than the corporate build:
 Chromium instead of Chrome, Code - OSS instead of VS Code. Firefox, Steam,
-Spotify, and Discord don't have that same open/corporate split, so those
-are Papirus's own GPL-licensed renditions of the real apps.
+Spotify, Discord, Audacity, and Slack don't have that same open/corporate
+split, so those are Papirus's own GPL-licensed renditions of the real apps.
 
 `examples/gear-source.png` is the one fully original placeholder, generated
 by `make_example_source.py`. The rasterized Papirus SVGs came from:
@@ -237,4 +234,6 @@ rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/64x64/apps/steam.svg -o stea
 rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/64x64/apps/code-oss.svg -o code-oss-source.png
 rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/128x128/apps/spotify.svg -o spotify-source.png
 rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/128x128/apps/discord.svg -o discord-source.png
+rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/128x128/apps/audacity.svg -o audacity-source.png
+rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/128x128/apps/slack.svg -o slack-source.png
 ```
