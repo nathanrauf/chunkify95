@@ -54,7 +54,7 @@ WIN95_HUE_FAMILIES = {
 }
 
 
-def nearest_win95_color(r, g, b, sat_threshold=0.15):
+def nearest_win95_color(r, g, b, sat_threshold=0.22):
     """Hue-aware nearest-color lookup for the fixed win95 palette: pixels
     below the saturation threshold match among black/gray/silver/white by
     brightness only; everything else matches to the closest hue family
@@ -62,6 +62,14 @@ def nearest_win95_color(r, g, b, sat_threshold=0.15):
     closer in brightness. Two separate decisions (hue, then lightness)
     instead of one combined RGB distance, which is what lets an actually
     purple pixel land on purple instead of gray.
+
+    sat_threshold started at 0.15 and still let faint anti-aliasing pixels
+    through: a pale green-white edge blend like (173, 195, 170), sat 0.13,
+    has just enough saturation to read as "basically white" to a person but
+    not enough to clear 0.15, so it fell into the achromatic branch and
+    matched gray/silver by brightness, showing up as stray gray specks
+    inside otherwise-white regions. 0.22 routes those through to their
+    actual (faint) hue instead.
     """
     h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
     if s < sat_threshold:
@@ -142,7 +150,7 @@ def ordered_dither(img_rgb, palette_colors, spread=40, match_fn=None):
     return out
 
 
-def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=40):
+def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=None):
     """The "pixel analyze" pass: downsample to a small grid (area-averaging,
     so each output pixel is the dominant color of its source block, not just
     a sample), then quantize with ordered dithering (see ordered_dither) at
@@ -158,6 +166,15 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=4
     nearest_win95_color rather than plain RGB distance (which routes most
     medium-saturation colors to gray regardless of actual hue: see that
     function's docstring).
+
+    dither_spread=None picks a palette-appropriate default: 40 for
+    adaptive, 60 for win95. win95 needs more: its hue-family matching only
+    has two brightness levels (dark/bright) to dither between per hue, a
+    coarser decision than an adaptive palette's finer-grained colors, so a
+    flat-shaded region needs a stronger perturbation before the dither
+    threshold actually pushes any pixels across that boundary. Below 60 a
+    lot of flat regions come out as one solid color with no texture at all
+    instead of the checkerboard shading real icons use.
     """
     w, h = img.size
     size = max(w, h)
@@ -170,10 +187,12 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=4
 
     small = square.convert("RGB").resize((grid, grid), Image.BOX)
     if palette == "win95":
-        quantized_rgb = ordered_dither(small, WIN95_PALETTE, spread=dither_spread, match_fn=nearest_win95_color)
+        spread = dither_spread if dither_spread is not None else 60
+        quantized_rgb = ordered_dither(small, WIN95_PALETTE, spread=spread, match_fn=nearest_win95_color)
     else:
+        spread = dither_spread if dither_spread is not None else 40
         palette_colors = build_adaptive_palette(small, colors)
-        quantized_rgb = ordered_dither(small, palette_colors, spread=dither_spread)
+        quantized_rgb = ordered_dither(small, palette_colors, spread=spread)
 
     small_alpha = alpha.resize((grid, grid), Image.BOX).point(lambda p: 255 if p > 96 else 0)
 
@@ -266,7 +285,7 @@ def add_drop_shadow(img, offset=None, blur=None, opacity=140):
     return canvas
 
 
-def chunkify95(img, pixel_grid=24, colors=12, bevel=True, shadow=True, outline=True, palette="adaptive", dither_spread=40):
+def chunkify95(img, pixel_grid=24, colors=12, bevel=True, shadow=True, outline=True, palette="adaptive", dither_spread=None):
     img = img.convert("RGBA")
     out = pixelate_and_quantize(img, pixel_grid, colors, palette, dither_spread)
     if outline:
@@ -287,7 +306,8 @@ def main():
     p.add_argument("--colors", type=int, default=12, help="adaptive palette size, ignored unless --palette adaptive (default: 12)")
     p.add_argument("--palette", choices=["adaptive", "win95"], default="adaptive",
                     help="adaptive (default): best-fit palette per image, keeps real color fidelity. win95: real fixed 16-color VGA palette, more period-accurate but loses hues with no close match.")
-    p.add_argument("--dither-spread", type=int, default=40, help="ordered-dither strength, 0 disables (default: 40)")
+    p.add_argument("--dither-spread", type=int, default=None,
+                    help="ordered-dither strength, 0 disables (default: 40 for adaptive, 60 for win95)")
     p.add_argument("--bevel", dest="bevel", action="store_true", default=True)
     p.add_argument("--no-bevel", dest="bevel", action="store_false")
     p.add_argument("--shadow", dest="shadow", action="store_true", default=True)

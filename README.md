@@ -42,7 +42,8 @@ Options:
                     real color fidelity. win95: the real fixed 16-color
                     VGA palette, hue-matched (see "Palettes" below),
                     more period-accurate but still fewer colors overall.
---dither-spread N  ordered-dither strength, 0 disables (default: 40)
+--dither-spread N  ordered-dither strength, 0 disables (default: 40
+                    adaptive, 60 win95, see "Palettes")
 --no-bevel         skip the 3D bevel pass
 --no-shadow        skip the drop shadow
 --no-outline       skip the black silhouette outline
@@ -117,9 +118,28 @@ closest *hue family* first, then picks that family's dark or bright variant
 by brightness. Two decisions instead of one combined distance, and colors
 land on an actually-related hue instead of the desaturated middle color.
 
-The default `adaptive` palette doesn't need this: it's built from the
+Two more win95-specific adjustments came out of testing this against real
+icons. The saturation threshold for "count this as gray" started at 0.15
+and still let faint anti-aliasing pixels through: a pale green-white edge
+blend with sat 0.13 reads as "basically white" to a person but not enough
+to clear 0.15, so it fell into the achromatic branch and showed up as stray
+gray specks inside otherwise-clean white regions. Raised to 0.22, and those
+pixels correctly keep their faint hue instead.
+
+Separately, a flat-shaded region can come out as one solid color with no
+texture at all: once a pixel picks "blue family, bright variant," most of
+a same-brightness region around it picks the exact same variant, since
+there's no gradient pushing any of it toward the dark half. The dither
+perturbation needs to be strong enough to actually push some pixels across
+that dark/bright boundary, and the default 40 (tuned against the finer-
+grained adaptive palette) usually isn't. `--dither-spread` defaults to 60
+specifically for `--palette win95` to compensate, which is what the
+checkerboard texture in the sample below actually comes from.
+
+The default `adaptive` palette doesn't need either fix: it's built from the
 image's own colors, so nothing in it is competing with gray for pixels that
-clearly aren't gray. If you do use `--palette win95`, also raise
+clearly aren't gray, and its finer-grained palette dithers visibly at the
+default spread already. If you do use `--palette win95`, also raise
 `--pixel-grid` (32 works well). More spatial resolution gives the dither
 pattern more room to carry detail the smaller palette can't represent
 directly.
