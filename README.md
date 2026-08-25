@@ -194,6 +194,14 @@ struggle with:
 - **Very detailed/busy icons**: anything with lots of small internal detail
   will lose most of it at low `--pixel-grid` values; raising the grid size
   helps but starts to look less authentically chunky.
+- **Single-hue-family icons under `--palette win95`**: hue-family matching
+  gives each family exactly two brightness levels to work with, dark and
+  bright. An icon that's several shades of one hue to begin with (Chromium's
+  blue disk) has nowhere near as much room to look distinct as a multi-hue
+  one does; the checkerboard dithering still gives it real texture, but it
+  stays visibly a two-tone result. The real 16-color palette also has no
+  orange or pink, so an orange source (VLC's cone) hue-matches to yellow,
+  the nearest family, not a literal orange.
 
 If a result looks muddy, try a smaller `--pixel-grid` (more aggressive,
 often *more* legible) or fewer `--colors`.
