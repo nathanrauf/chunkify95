@@ -1,11 +1,9 @@
 # chunkify95
 
-Recreates a modern app icon in a rough Windows-98-era style: pixel-analyze
+Recreates a modern app icon in a rough Windows-95/98-era style: pixel-analyze
 the source down to a chunky low-color grid with dithering, trace a black
 outline around the silhouette, then layer on a hand-rolled 3D bevel and
-hard drop shadow. Those last three things, not just the pixelation, are
-what actually make an icon read as "Win98" instead of "photo with a
-pixelate filter applied."
+hard drop shadow.
 
 | Source | Result | Source | Result |
 |---|---|---|---|
@@ -13,12 +11,11 @@ pixelate filter applied."
 | <img src="examples/chromium-source.png" width="90"> | <img src="examples/chromium-win98.png" width="90"> | <img src="examples/steam-source.png" width="90"> | <img src="examples/steam-win98.png" width="90"> |
 | <img src="examples/code-oss-source.png" width="90"> | <img src="examples/code-oss-win98.png" width="90"> | | |
 
-The gear is the original demo asset. The rest come from the
+Here are some examples. The gear is an original demo asset but the rest come from the
 [Papirus icon theme](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)
 (GPL-3.0), specifically its icons for Firefox, Chromium, Steam, and Code -
 OSS, the open-source upstream projects, not Google's Chrome or Microsoft's
-Visual Studio Code builds. See "Licensing" below for why that distinction
-matters.
+Visual Studio Code builds. See "Licensing" below.
 
 Built to plug the icon gap in [chicago95-plus](https://github.com/nathanrauf/chicago95-plus)
 (a Chicago95-on-Cinnamon companion pack). Chicago95's icon theme covers a
