@@ -9,16 +9,16 @@ pixelate filter applied."
 
 | Source | Result | Source | Result |
 |---|---|---|---|
-| ![gear source](examples/gear-source.png) | ![gear win98](examples/gear-win98.png) | ![Firefox source](examples/firefox-source.png) | ![Firefox win98](examples/firefox-win98.png) |
-| ![Chromium source](examples/chromium-source.png) | ![Chromium win98](examples/chromium-win98.png) | ![Steam source](examples/steam-source.png) | ![Steam win98](examples/steam-win98.png) |
-| ![Code - OSS source](examples/code-oss-source.png) | ![Code - OSS win98](examples/code-oss-win98.png) | | |
+| <img src="examples/gear-source.png" width="90"> | <img src="examples/gear-win98.png" width="90"> | <img src="examples/firefox-source.png" width="90"> | <img src="examples/firefox-win98.png" width="90"> |
+| <img src="examples/chromium-source.png" width="90"> | <img src="examples/chromium-win98.png" width="90"> | <img src="examples/steam-source.png" width="90"> | <img src="examples/steam-win98.png" width="90"> |
+| <img src="examples/code-oss-source.png" width="90"> | <img src="examples/code-oss-win98.png" width="90"> | | |
 
 The gear is the original demo asset. The rest come from the
 [Papirus icon theme](https://github.com/PapirusDevelopmentTeam/papirus-icon-theme)
 (GPL-3.0), specifically its icons for Firefox, Chromium, Steam, and Code -
 OSS, the open-source upstream projects, not Google's Chrome or Microsoft's
-Visual Studio Code builds. See "Why these and not the real corporate logos"
-below for why that distinction matters.
+Visual Studio Code builds. See "Licensing" below for why that distinction
+matters.
 
 Built to plug the icon gap in [chicago95-plus](https://github.com/nathanrauf/chicago95-plus)
 (a Chicago95-on-Cinnamon companion pack). Chicago95's icon theme covers a
@@ -52,7 +52,7 @@ Options:
 --sizes 16,32,48   comma-separated output sizes
 ```
 
-## How it works
+## Pipeline
 
 1. **Pixel-analyze**: the source is pasted onto a square canvas, downsampled
    to an `N×N` grid with box (area-average) filtering, so each output cell
@@ -63,7 +63,7 @@ Options:
    perturbing it by a small, position-based threshold (a 4×4 Bayer matrix).
    This produces a deliberate, regular checkerboard exactly at color-
    transition zones instead of either a flat block or scattered noise. See
-   "Dithering, and why it's ordered, not Floyd-Steinberg" below.
+   "Dithering" below.
 3. **Upscale with nearest-neighbor** back to full size, keeping hard pixel
    edges instead of blur.
 4. **Outline**: a black line traced around the outer silhouette only (the
@@ -75,7 +75,7 @@ Options:
 6. **Drop shadow**: a blurred, offset black copy of the silhouette, behind
    everything.
 
-## Dithering, and why it's ordered, not Floyd-Steinberg
+## Dithering
 
 The first working version of this used `PIL.Image.quantize(...,
 dither=Image.FLOYDSTEINBERG)`, and it did nothing. Diffing the output
@@ -100,7 +100,7 @@ produces a *deliberate*, regular checkerboard concentrated at actual color
 transitions, closer to how a real pixel artist would hand-place dither for
 shading, instead of scattered noise across the whole image.
 
-## Adaptive vs. win95 palette
+## Palettes
 
 Windows 95 primarily used a 16-color palette for standard desktop icons
 (the OS technically supported up to 256). Using that literal fixed
@@ -116,25 +116,23 @@ than strict period accuracy does. If you do use `--palette win95`, raise
 pattern more room to carry detail that the smaller palette can't represent
 directly.
 
-## The win95 palette, for reference
+## Win95 sample
 
 Same five icons, `--palette win95 --pixel-grid 32` instead of the adaptive
 default. Compare against the table at the top: more period-accurate colors,
 noticeably less vibrant, but still legible thanks to the higher grid
 resolution.
 
-| win95 palette |
-|---|
-| ![gear win95 palette](examples/gear-win98-win95palette.png) ![Firefox win95 palette](examples/firefox-win98-win95palette.png) ![Chromium win95 palette](examples/chromium-win98-win95palette.png) ![Steam win95 palette](examples/steam-win98-win95palette.png) ![Code - OSS win95 palette](examples/code-oss-win98-win95palette.png) |
+<img src="examples/gear-win98-win95palette.png" width="90"> <img src="examples/firefox-win98-win95palette.png" width="90"> <img src="examples/chromium-win98-win95palette.png" width="90"> <img src="examples/steam-win98-win95palette.png" width="90"> <img src="examples/code-oss-win98-win95palette.png" width="90">
 
-## What it's good at
+## Strengths
 
 Simple, high-contrast, single-subject icons: logos, glyphs, app marks. I
 tested it against VS Code's and Thunderbird's real icons during development
 (not included here, see below) and got genuinely recognizable, distinctly
 Win98-flavored results even at 16px.
 
-## What it's not good at
+## Limits
 
 This is a heuristic re-stylization, not true style transfer, and I'd rather
 say that up front than let you find out from a muddy result. It will
@@ -153,7 +151,7 @@ struggle with:
 If a result looks muddy, try a smaller `--pixel-grid` (more aggressive,
 often *more* legible) or fewer `--colors`.
 
-## Why these and not the real corporate logos
+## Licensing
 
 A company's actual logo file is their trademarked artwork, current and
 actively enforced. Fine to run this tool against your own desktop's real
