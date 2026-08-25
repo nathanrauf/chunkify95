@@ -54,7 +54,7 @@ WIN95_HUE_FAMILIES = {
 }
 
 
-def nearest_win95_color(r, g, b, sat_threshold=0.22):
+def nearest_win95_color(r, g, b, t=0, sat_threshold=0.22):
     """Hue-aware nearest-color lookup for the fixed win95 palette: pixels
     below the saturation threshold match among black/gray/silver/white by
     brightness only; everything else matches to the closest hue family
@@ -70,8 +70,20 @@ def nearest_win95_color(r, g, b, sat_threshold=0.22):
     matched gray/silver by brightness, showing up as stray gray specks
     inside otherwise-white regions. 0.22 routes those through to their
     actual (faint) hue instead.
+
+    t is the ordered-dither threshold offset (see ordered_dither), applied
+    here to brightness only, after hue and saturation are computed from the
+    true, unperturbed r/g/b. Earlier this added t to r/g/b uniformly before
+    computing hue at all, which meant a strong enough perturbation could
+    shift a pixel's hue across a family boundary entirely, a stray cyan
+    speck showing up in an otherwise solid blue circle. Hue and grayness are
+    stable, real properties of the source pixel; only the dark/bright
+    brightness choice should be dithered, so only that step sees t. This is
+    what let the default dither spread go up (see pixelate_and_quantize)
+    without reintroducing wrong-hue-family noise.
     """
     h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+    v = max(0.0, min(1.0, v + t / 255))
     if s < sat_threshold:
         return min(WIN95_ACHROMATIC, key=lambda c: abs(colorsys.rgb_to_hsv(*(x / 255 for x in c))[2] - v))
 
@@ -103,8 +115,11 @@ def build_adaptive_palette(img_rgb, colors):
     return [tuple(flat[i:i + 3]) for i in range(0, len(flat), 3)]
 
 
-def _nearest_rgb(r, g, b, palette_colors):
-    return min(palette_colors, key=lambda c: (c[0] - r) ** 2 + (c[1] - g) ** 2 + (c[2] - b) ** 2)
+def _nearest_rgb(r, g, b, t, palette_colors):
+    r2 = max(0, min(255, r + t))
+    g2 = max(0, min(255, g + t))
+    b2 = max(0, min(255, b + t))
+    return min(palette_colors, key=lambda c: (c[0] - r2) ** 2 + (c[1] - g2) ** 2 + (c[2] - b2) ** 2)
 
 
 def ordered_dither(img_rgb, palette_colors, spread=40, match_fn=None):
@@ -117,12 +132,14 @@ def ordered_dither(img_rgb, palette_colors, spread=40, match_fn=None):
     real Win9x icon art dithers shading by hand. spread=0 disables the
     perturbation entirely (plain nearest-color, no dither).
 
-    match_fn(r, g, b) -> (r, g, b) overrides the default plain-Euclidean
-    nearest-color lookup; pass nearest_win95_color for palette="win95" (see
-    its docstring for why the default distance metric picks gray far too
-    often). Left as plain Euclidean for the adaptive palette, where it's
-    fine: an adaptive palette is built from the image's own colors, so nothing
-    in it competes with gray for pixels that clearly aren't gray.
+    match_fn(r, g, b, t) -> (r, g, b) overrides the default plain-Euclidean
+    nearest-color lookup, receiving the *unperturbed* source pixel plus the
+    raw dither threshold t separately rather than pre-perturbed RGB, so a
+    hue-aware matcher can dither brightness without letting hue drift. Pass
+    nearest_win95_color for palette="win95" (see its docstring). Left as
+    plain Euclidean for the adaptive palette, where it's fine: an adaptive
+    palette is built from the image's own colors, so nothing in it competes
+    with gray for pixels that clearly aren't gray.
 
     PIL quirk found along the way: passing dither= directly to
     quantize(method=MEDIANCUT, ...) is silently ignored. Verified by
@@ -133,7 +150,7 @@ def ordered_dither(img_rgb, palette_colors, spread=40, match_fn=None):
     chaotic per-pixel noise rather than the sparse, deliberate dithering
     real icons have. This hand-rolled ordered dither replaced it entirely.
     """
-    match_fn = match_fn or (lambda r, g, b: _nearest_rgb(r, g, b, palette_colors))
+    match_fn = match_fn or (lambda r, g, b, t: _nearest_rgb(r, g, b, t, palette_colors))
     w, h = img_rgb.size
     px = img_rgb.load()
     out = Image.new("RGB", (w, h))
@@ -143,10 +160,7 @@ def ordered_dither(img_rgb, palette_colors, spread=40, match_fn=None):
         for x in range(w):
             r, g, b = px[x, y]
             t = (BAYER_4X4[y % n][x % n] / (n * n) - 0.5) * spread
-            r2 = max(0, min(255, r + t))
-            g2 = max(0, min(255, g + t))
-            b2 = max(0, min(255, b + t))
-            out_px[x, y] = match_fn(r2, g2, b2)
+            out_px[x, y] = match_fn(r, g, b, t)
     return out
 
 
@@ -168,13 +182,15 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=N
     function's docstring).
 
     dither_spread=None picks a palette-appropriate default: 40 for
-    adaptive, 60 for win95. win95 needs more: its hue-family matching only
+    adaptive, 100 for win95. win95 needs more: its hue-family matching only
     has two brightness levels (dark/bright) to dither between per hue, a
     coarser decision than an adaptive palette's finer-grained colors, so a
     flat-shaded region needs a stronger perturbation before the dither
-    threshold actually pushes any pixels across that boundary. Below 60 a
-    lot of flat regions come out as one solid color with no texture at all
-    instead of the checkerboard shading real icons use.
+    threshold actually pushes any pixels across that boundary. A spread
+    this strong would cause real problems for plain-RGB matching (colors
+    jumping to unrelated hues), but nearest_win95_color only ever dithers
+    brightness, hue comes from the unperturbed pixel, so pushing spread
+    this far is safe and just means denser, more visible checkering.
     """
     w, h = img.size
     size = max(w, h)
@@ -187,7 +203,7 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=N
 
     small = square.convert("RGB").resize((grid, grid), Image.BOX)
     if palette == "win95":
-        spread = dither_spread if dither_spread is not None else 60
+        spread = dither_spread if dither_spread is not None else 100
         quantized_rgb = ordered_dither(small, WIN95_PALETTE, spread=spread, match_fn=nearest_win95_color)
     else:
         spread = dither_spread if dither_spread is not None else 40
@@ -307,7 +323,7 @@ def main():
     p.add_argument("--palette", choices=["adaptive", "win95"], default="adaptive",
                     help="adaptive (default): best-fit palette per image, keeps real color fidelity. win95: real fixed 16-color VGA palette, more period-accurate but loses hues with no close match.")
     p.add_argument("--dither-spread", type=int, default=None,
-                    help="ordered-dither strength, 0 disables (default: 40 for adaptive, 60 for win95)")
+                    help="ordered-dither strength, 0 disables (default: 40 for adaptive, 100 for win95)")
     p.add_argument("--bevel", dest="bevel", action="store_true", default=True)
     p.add_argument("--no-bevel", dest="bevel", action="store_false")
     p.add_argument("--shadow", dest="shadow", action="store_true", default=True)

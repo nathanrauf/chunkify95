@@ -132,9 +132,20 @@ a same-brightness region around it picks the exact same variant, since
 there's no gradient pushing any of it toward the dark half. The dither
 perturbation needs to be strong enough to actually push some pixels across
 that dark/bright boundary, and the default 40 (tuned against the finer-
-grained adaptive palette) usually isn't. `--dither-spread` defaults to 60
-specifically for `--palette win95` to compensate, which is what the
-checkerboard texture in the sample below actually comes from.
+grained adaptive palette) usually isn't.
+
+The obvious fix, just push the spread way up, caused a new problem at
+first: the perturbation was being added to r/g/b before hue was even
+computed, so a strong enough push could shift a pixel's hue across a
+family boundary entirely, a stray cyan speck showing up in an otherwise
+solid blue circle. `nearest_win95_color` now computes hue and saturation
+from the true, unperturbed pixel, and only perturbs the brightness used
+for the dark/bright decision. Hue is a stable, real property of the
+source color; only lightness should be up for dithering. With that fixed,
+spread can go much higher with no risk of wrong-hue noise, so
+`--dither-spread` defaults to 100 specifically for `--palette win95`,
+which is what the dense checkerboard texture in the sample below actually
+comes from.
 
 The default `adaptive` palette doesn't need either fix: it's built from the
 image's own colors, so nothing in it is competing with gray for pixels that
