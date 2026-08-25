@@ -182,15 +182,19 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=N
     function's docstring).
 
     dither_spread=None picks a palette-appropriate default: 40 for
-    adaptive, 100 for win95. win95 needs more: its hue-family matching only
-    has two brightness levels (dark/bright) to dither between per hue, a
-    coarser decision than an adaptive palette's finer-grained colors, so a
-    flat-shaded region needs a stronger perturbation before the dither
-    threshold actually pushes any pixels across that boundary. A spread
-    this strong would cause real problems for plain-RGB matching (colors
-    jumping to unrelated hues), but nearest_win95_color only ever dithers
-    brightness, hue comes from the unperturbed pixel, so pushing spread
-    this far is safe and just means denser, more visible checkering.
+    adaptive, 250 for win95. win95 needs a lot more: its hue-family
+    matching only has two brightness levels (dark/bright) to dither
+    between per hue, a coarser decision than an adaptive palette's finer-
+    grained colors, so a flat-shaded region needs a strong perturbation
+    before the dither threshold actually pushes any pixels across that
+    boundary. A spread this strong would wreck plain-RGB matching (colors
+    jumping to unrelated hues entirely), but nearest_win95_color only ever
+    dithers brightness; hue comes from the unperturbed pixel. That's what
+    makes pushing spread this far safe: tested up to 450 with zero wrong-
+    hue artifacts, just progressively denser checkering. Below ~200, large
+    single-color regions (a logo's solid red body, say) mostly don't cross
+    the dark/bright threshold at all and render as one flat block instead
+    of the checkerboard shading real icons use throughout.
     """
     w, h = img.size
     size = max(w, h)
@@ -203,7 +207,7 @@ def pixelate_and_quantize(img, grid, colors, palette="adaptive", dither_spread=N
 
     small = square.convert("RGB").resize((grid, grid), Image.BOX)
     if palette == "win95":
-        spread = dither_spread if dither_spread is not None else 100
+        spread = dither_spread if dither_spread is not None else 250
         quantized_rgb = ordered_dither(small, WIN95_PALETTE, spread=spread, match_fn=nearest_win95_color)
     else:
         spread = dither_spread if dither_spread is not None else 40
@@ -323,7 +327,7 @@ def main():
     p.add_argument("--palette", choices=["adaptive", "win95"], default="adaptive",
                     help="adaptive (default): best-fit palette per image, keeps real color fidelity. win95: real fixed 16-color VGA palette, more period-accurate but loses hues with no close match.")
     p.add_argument("--dither-spread", type=int, default=None,
-                    help="ordered-dither strength, 0 disables (default: 40 for adaptive, 100 for win95)")
+                    help="ordered-dither strength, 0 disables (default: 40 for adaptive, 250 for win95)")
     p.add_argument("--bevel", dest="bevel", action="store_true", default=True)
     p.add_argument("--no-bevel", dest="bevel", action="store_false")
     p.add_argument("--shadow", dest="shadow", action="store_true", default=True)

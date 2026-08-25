@@ -43,7 +43,7 @@ Options:
                     VGA palette, hue-matched (see "Palettes" below),
                     more period-accurate but still fewer colors overall.
 --dither-spread N  ordered-dither strength, 0 disables (default: 40
-                    adaptive, 60 win95, see "Palettes")
+                    adaptive, 250 win95, see "Palettes")
 --no-bevel         skip the 3D bevel pass
 --no-shadow        skip the drop shadow
 --no-outline       skip the black silhouette outline
@@ -141,11 +141,20 @@ family boundary entirely, a stray cyan speck showing up in an otherwise
 solid blue circle. `nearest_win95_color` now computes hue and saturation
 from the true, unperturbed pixel, and only perturbs the brightness used
 for the dark/bright decision. Hue is a stable, real property of the
-source color; only lightness should be up for dithering. With that fixed,
-spread can go much higher with no risk of wrong-hue noise, so
-`--dither-spread` defaults to 100 specifically for `--palette win95`,
-which is what the dense checkerboard texture in the sample below actually
-comes from.
+source color; only lightness should be up for dithering.
+
+With that fixed, the remaining question was how much spread it actually
+takes to break up a large flat region, and whether a bigger Bayer matrix
+would help instead. It doesn't: an 8x8 matrix changes the dither pattern's
+micro-texture, not whether a solidly-mid-brightness pixel is anywhere near
+the dark/bright threshold in the first place, and a large flat region is
+made of exactly those pixels regardless of matrix size. Spread is the
+actual lever. Testing it up to 450 against the samples below found no
+wrong-hue artifacts anywhere (the hue/brightness split above is what makes
+that safe) and no washed-out results even at 300, so `--dither-spread`
+defaults to 250 specifically for `--palette win95`. That's what turns the
+Chromium icon below, previously close to two flat blue disks, into visible
+checkerboard texture across the whole body.
 
 The default `adaptive` palette doesn't need either fix: it's built from the
 image's own colors, so nothing in it is competing with gray for pixels that
