@@ -172,6 +172,13 @@ still recognizably the right hues now that matching is hue-aware.
 
 <img src="examples/gear-win98-win95palette.png" width="90"> <img src="examples/firefox-win98-win95palette.png" width="90"> <img src="examples/chromium-win98-win95palette.png" width="90"> <img src="examples/steam-win98-win95palette.png" width="90"> <img src="examples/code-oss-win98-win95palette.png" width="90">
 
+Flatter, bolder-colored icons hold up even better under the fixed win95
+palette, since there's less fine color detail to lose in the first place:
+
+| Source | Result | Source | Result |
+|---|---|---|---|
+| <img src="examples/spotify-source.png" width="90"> | <img src="examples/spotify-win98-win95palette.png" width="90"> | <img src="examples/discord-source.png" width="90"> | <img src="examples/discord-win98-win95palette.png" width="90"> |
+
 ## Strengths
 
 Simple, high-contrast, single-subject icons: logos, glyphs, app marks. I
@@ -216,9 +223,9 @@ Chrome icon or Microsoft's VS Code icon in this repo.
 Papirus's icons are a different case: original artwork drawn by the Papirus
 project, released under their own GPL-3.0 license, and (where one exists)
 drawn for the open-source upstream project rather than the corporate build:
-Chromium instead of Chrome, Code - OSS instead of VS Code. Firefox and Steam
-don't have that same open/corporate split, so those two are Papirus's own
-GPL-licensed renditions of the real apps.
+Chromium instead of Chrome, Code - OSS instead of VS Code. Firefox, Steam,
+Spotify, and Discord don't have that same open/corporate split, so those
+are Papirus's own GPL-licensed renditions of the real apps.
 
 `examples/gear-source.png` is the one fully original placeholder, generated
 by `make_example_source.py`. The rasterized Papirus SVGs came from:
@@ -228,4 +235,6 @@ rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/64x64/apps/firefox.svg -o fi
 rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/64x64/apps/chromium.svg -o chromium-source.png
 rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/64x64/apps/steam.svg -o steam-source.png
 rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/64x64/apps/code-oss.svg -o code-oss-source.png
+rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/128x128/apps/spotify.svg -o spotify-source.png
+rsvg-convert -w 512 -h 512 /usr/share/icons/Papirus/128x128/apps/discord.svg -o discord-source.png
 ```
